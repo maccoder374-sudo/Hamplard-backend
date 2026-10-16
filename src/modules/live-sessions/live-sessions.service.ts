@@ -84,8 +84,7 @@ export class LiveSessionsService {
 
     if (
       session.course.instructorAddress !== user.stellarAddress &&
-      session.instructorAddress !== user.stellarAddress &&
-      session.course.instructorAddress !== user.id
+      session.course.instructor.id !== user.id
     ) {
       throw new ForbiddenException('Only the session instructor can update session details');
     }
@@ -193,3 +192,57 @@ export class LiveSessionsService {
     }
   }
 }
+  async rsvp(user: any, sessionId: string) {
+    const session = await this.prisma.liveSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Live session not found');
+    }
+
+    const isEnrolled = await this.prisma.enrollment.findFirst({
+      where: {
+        courseId: session.courseId,
+        studentId: user.id,
+        status: 'ACTIVE',
+      },
+    });
+
+    if (!isEnrolled) {
+      throw new ForbiddenException('Only enrolled students can RSVP');
+    }
+
+    const rsvpCount = await this.prisma.liveSessionRsvp.count({
+      where: { sessionId },
+    });
+
+    if (rsvpCount >= session.capacity) {
+      throw new ConflictException('Session is at capacity');
+    }
+
+    await this.prisma.liveSessionRsvp.upsert({
+      where: {
+        sessionId_studentId: {
+          sessionId,
+          studentId: user.id,
+        },
+      },
+      create: {
+        sessionId,
+        studentId: user.id,
+      },
+      update: {},
+    });
+
+    return { message: 'RSVP confirmed' };
+  }
+
+  async cancelRsvp(user: any, sessionId: string) {
+    await this.prisma.liveSessionRsvp.deleteMany({
+      where: {
+        sessionId,
+        studentId: user.id,
+      },
+    });
+  }
